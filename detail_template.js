@@ -141,4 +141,4 @@ function generateDetailHTML(article, summarySentences) {
     `;
 }
 
-module.exports = { generateDetailHTML };
+export { generateDetailHTML };
