@@ -27,12 +27,8 @@ jobs:
       - name: Build Static Site
         run: node build.js
 
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: "naver-news-summary" # You can change this project name
-          directory: "dist"
-          # Optional: Enable if you want to use the branch name as the deployment environment
-          # gitHubToken: ${{ secrets.GITHUB_TOKEN }}
