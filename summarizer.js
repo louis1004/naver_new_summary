@@ -60,4 +60,4 @@ function summarize(title, content) {
     return summary;
 }
 
-module.exports = { summarize };
+export { summarize };

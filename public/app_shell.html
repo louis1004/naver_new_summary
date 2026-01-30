@@ -7,29 +7,45 @@
     <style>
         /* CSS Variables for Theming - FORCED DARK MODE */
         :root {
-            --bg-color: #1a1a1a;
-            --text-color: #e0e0e0;
-            --secondary-text: #aaaaaa;
-            --border-color: #333333;
-            --primary-color: #03C75A;
+            --bg-color: #0f1113;
+            --box-bg: #1a1d21;
+            --text-color: #e9ecef;
+            --secondary-text: #adb5bd;
+            --border-color: #2d3436;
+            --primary-color: #00d1b2;
             --highlight-bg: #3d3b2a;
-            --visited-color: #666666;
-            --hover-bg: #2a2a2a;
+            --visited-color: #6c757d;
+            --hover-bg: #212529;
+            --accent-color: #3273dc;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
             padding: 0;
             background-color: var(--bg-color);
             color: var(--text-color);
-            font-size: 14px;
+            -webkit-font-smoothing: antialiased;
         }
 
         .container {
-            max-width: 1400px;
-            margin: 1rem auto;
-            padding: 0 1rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 1rem 1.5rem;
+        }
+
+        header {
+            padding: 2rem 0;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            margin: 0;
+            background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 800;
         }
 
         .loading-screen {
@@ -47,80 +63,96 @@
         }
         
         .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid var(--border-color);
-            border-top: 4px solid var(--primary-color);
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(0, 209, 178, 0.1);
+            border-top: 3px solid var(--primary-color);
             border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 1rem;
+            animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+            margin-bottom: 1.5rem;
         }
         
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* Grid Layout */
         .sections-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 2rem;
-            display: none; /* Hidden until loaded */
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
         }
 
-        .section-container { margin-bottom: 2rem; }
+        .section-container {
+            background-color: var(--box-bg);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
         .section-title {
-            border-bottom: 2px solid var(--primary-color);
-            padding-bottom: 0.5rem;
-            margin: 0 0 0.5rem;
-            font-size: 1.1rem;
-            font-weight: bold;
+            color: var(--primary-color);
+            font-size: 1.25rem;
+            margin: 0 0 1rem 0;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+        }
+
+        .section-title::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 1.25rem;
+            background-color: var(--primary-color);
+            margin-right: 0.75rem;
+            border-radius: 2px;
         }
 
         .news-list { list-style: none; padding: 0; margin: 0; }
+        
         .news-item {
-            display: flex;
-            align-items: center;
-            padding: 0.5rem 0;
+            padding: 0.75rem 0;
             border-bottom: 1px solid var(--border-color);
+            transition: background-color 0.2s;
         }
-        .news-item:hover { background-color: var(--hover-bg); }
+        
+        .news-item:last-child { border-bottom: none; }
 
-        .time {
-            width: 70px;
-            font-size: 0.85rem;
+        .news-link {
+            text-decoration: none;
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .news-link:hover .title {
+            color: var(--primary-color);
+        }
+
+        .time-meta {
+            font-size: 0.75rem;
             color: var(--secondary-text);
-            text-align: center;
-            flex-shrink: 0;
+            display: flex;
+            gap: 0.5rem;
         }
 
         .title {
-            flex-grow: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            font-size: 1rem;
+            line-height: 1.5;
             font-weight: 500;
-        }
-        
-        .title a {
-            text-decoration: none;
-            color: var(--text-color);
-            display: block; /* Expand click area */
+            word-break: keep-all;
         }
 
-        /* Visited Link Style */
-        .title a:visited {
-            color: var(--visited-color);
-        }
-
-        /* Keyword Highlight */
-        .highlight {
-            background-color: var(--highlight-bg);
-            border-radius: 2px;
-            padding: 0 2px;
-            font-weight: bold;
-        }
-
-        @media (max-width: 900px) {
-            .sections-grid { grid-template-columns: 1fr; }
+        /* Mobile Adjustments */
+        @media (max-width: 600px) {
+            header h1 { font-size: 1.5rem; }
+            .sections-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            .section-container { padding: 1rem; }
+            .title { font-size: 0.95rem; }
         }
     </style>
 </head>
@@ -129,6 +161,12 @@
         <div class="spinner"></div>
         <p>최신 뉴스를 수집하고 있습니다. 잠시만 기다려 주세요...</p>
     </div>
+
+    <header>
+        <div class="container">
+            <h1>뉴스 요약 V4</h1>
+        </div>
+    </header>
 
     <div class="container">
         <div id="content" class="sections-grid"></div>
@@ -164,6 +202,12 @@
         function renderNews(articles) {
             const container = document.getElementById('content');
             
+            // Safety check for null/invalid data
+            if (!articles || !Array.isArray(articles)) {
+                console.error('Invalid articles data:', articles);
+                return;
+            }
+            
             // Group by section
             const grouped = {};
             articles.forEach(article => {
@@ -190,21 +234,21 @@
                     const li = document.createElement('li');
                     li.className = 'news-item';
                     
-                    const timeSpan = document.createElement('div');
-                    timeSpan.className = 'time';
-                    timeSpan.textContent = formatTime(article.publishTime);
+                    const link = document.createElement('a');
+                    link.className = 'news-link';
+                    link.href = `/view?url=${encodeURIComponent(article.url)}`;
+                    
+                    const timeMeta = document.createElement('div');
+                    timeMeta.className = 'time-meta';
+                    timeMeta.innerHTML = `<span>${article.press}</span> <span>•</span> <span>${formatTime(article.publishTime)}</span>`;
                     
                     const titleDiv = document.createElement('div');
                     titleDiv.className = 'title';
+                    titleDiv.innerHTML = sophisticatedHighlight(article.title);
                     
-                    const link = document.createElement('a');
-                    link.href = `/view?url=${encodeURIComponent(article.url)}`;
-                    // Highlight logic
-                    link.innerHTML = sophisticatedHighlight(article.title);
-                    
-                    titleDiv.appendChild(link);
-                    li.appendChild(timeSpan);
-                    li.appendChild(titleDiv);
+                    link.appendChild(timeMeta);
+                    link.appendChild(titleDiv);
+                    li.appendChild(link);
                     ul.appendChild(li);
                 });
                 
