@@ -1,126 +1,95 @@
-import { Hono } from 'hono';
-import { serveStatic } from 'hono/cloudflare-workers';
-import manifest from '__STATIC_CONTENT_MANIFEST';
-import * as scraper from './scraper.js';
-import * as summarizer from './summarizer.js';
-import * as detailTemplate from './detail_template.js';
+const { Hono } = require('hono');
+const { serveStatic } = require('hono/cloudflare-workers');
+const scraper = require('./scraper');
+const summarizer = require('./summarizer');
+const detailTemplate = require('./detail_template');
 
 const app = new Hono();
 
-app.onError((err, c) => {
-    console.error(`Error: ${err.message}`);
-    console.error(err.stack);
-    return c.text(`Internal Server Error: ${err.message}\n${err.stack}`, 500);
-});
-
 // Cache to prevent pounding the server if multiple refreshes happen instantly
 let cache = {
-    data: [], // Initialize to empty array instead of null
+    data: null,
     lastUpdated: 0,
-    isUpdating: false,
-    updatePromise: null // Store promise for synchronization
+    isUpdating: false
 };
 
-// Cache policy: List Cache (1 min), Summary Cache (1 hour)
-const LIST_CACHE_DURATION = 60 * 1000; 
-let summaryCache = new Map(); // url -> { article, summarySentences, timestamp }
-
-// URL normalization for matching (ignores query params)
-function normalizeUrl(url) {
-    if (!url) return '';
-    try {
-        const u = new URL(url);
-        return u.origin + u.pathname;
-    } catch (e) {
-        return url.split('?')[0];
-    }
-}
+const CACHE_DURATION = 60 * 1000; // 1 minute cache
 
 // API Route for News Data
 app.get('/api/news', async (c) => {
     try {
-        // Always trigger update per user request for absolute real-time data
+        const now = Date.now();
+        
+        // Return cache if fresh enough (1 min)
+        if (cache.data && (now - cache.lastUpdated < CACHE_DURATION)) {
+            console.log('Serving cached API data');
+            return c.json(cache.data);
+        }
+
+        // Trigger update
         await updateCache();
-        return c.json(cache.data || []);
+        return c.json(cache.data);
+
     } catch (error) {
         console.error(error);
-        return c.json({ 
-            error: 'Failed to scrape news', 
-            message: error.message
-        }, 500);
+        return c.json({ error: 'Failed to scrape news' }, 500);
     }
 });
 
+// For Cloudflare Workers, the root '/' will be handled by serveStatic (app_shell.html)
+// However, we might need a specific route if it's not working as index.html
 app.get('/', async (c) => {
-    return serveStatic({ path: './index.html', manifest })(c);
+    // In Workers Sites, public/index.html is usually served automatically.
+    // If your entry is app_shell.html, we can redirect or serve it.
+    return c.redirect('/app_shell.html');
 });
 
 app.get('/view', async (c) => {
     const articleUrl = c.req.query('url');
-    if (!articleUrl) return c.text('Missing URL', 400);
+    if (!articleUrl) {
+        return c.text('Missing url parameter', 400);
+    }
 
-    const now = Date.now();
-    const normalizedUrl = normalizeUrl(articleUrl);
+    // Try to find article in cache first
+    let article = null;
+    if (cache.data) {
+        article = cache.data.find(a => a.url === articleUrl);
+    }
 
-    // 1. Check Summary Cache first (1 hour)
-    if (summaryCache.has(normalizedUrl)) {
-        const cached = summaryCache.get(normalizedUrl);
-        if (now - cached.timestamp < 3600 * 1000) {
-            console.log('Serving cached summary');
-            return c.html(detailTemplate.generateDetailHTML(cached.article, cached.summarySentences));
+    if (!article) {
+        if (!cache.data) {
+             await updateCache();
+             article = cache.data.find(a => a.url === articleUrl);
         }
     }
 
-    try {
-        // 2. Perform Lazy Summary (Deep Crawl on demand)
-        const articleDetails = await scraper.getArticleSummary(articleUrl);
-        if (!articleDetails || !articleDetails.content) {
-            return c.text('Failed to fetch article content or article is unavailable.', 404);
-        }
-
-        const summarySentences = summarizer.summarize(articleDetails.title, articleDetails.content);
-        
-        // 3. Cache the result
-        summaryCache.set(normalizedUrl, {
-            article: articleDetails,
-            summarySentences,
-            timestamp: now
-        });
-
-        return c.html(detailTemplate.generateDetailHTML(articleDetails, summarySentences));
-    } catch (e) {
-        console.error("View failed", e);
-        return c.text(`Error generating summary: ${e.message}`, 500);
+    if (!article) {
+        return c.text('Article not found in recent list. Please refresh the main page.', 404);
     }
+
+    const summarySentences = summarizer.summarize(article.title, article.content);
+    const html = detailTemplate.generateDetailHTML(article, summarySentences);
+    return c.html(html);
 });
 
 async function updateCache() {
-    if (cache.isUpdating) {
-        // If already updating, wait for that promise to resolve
-        return cache.updatePromise;
-    }
-    
+    if (cache.isUpdating) return;
     cache.isUpdating = true;
-    cache.updatePromise = (async () => {
-        console.log('Scraping new data...');
-        try {
-            const articles = await scraper.scrapeRecentArticles();
-            cache.data = articles || [];
-            cache.lastUpdated = Date.now();
-        } catch (e) {
-            console.error("Scrape failed", e);
-            // Don't throw here so we don't break consecutive requests, 
-            // but log it
-        } finally {
-            cache.isUpdating = false;
-            cache.updatePromise = null;
-        }
-    })();
-
-    return cache.updatePromise;
+    console.log('Scraping new data...');
+    try {
+        const articles = await scraper.scrapeRecentArticles();
+        cache.data = articles;
+        cache.lastUpdated = Date.now();
+    } catch (e) {
+        console.error("Scrape failed", e);
+        throw e;
+    } finally {
+        cache.isUpdating = false;
+    }
 }
 
-// Serve static files using manifest
-app.use('/*', serveStatic({ manifest }));
+// Serve static files from the 'public' directory
+// Cloudflare Workers Sites/Pages often expect 'public' or '.' depending on config.
+app.use('/*', serveStatic({ root: './public' }));
 
 export default app;

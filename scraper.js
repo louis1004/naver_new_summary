@@ -1,4 +1,5 @@
-import { load } from 'cheerio';
+// Cloudflare Workers uses native fetch, no need for axios
+const cheerio = require('cheerio');
 
 const SECTIONS = ['100', '101', '102', '103', '104']; // Politics, Economy, Society, Life/Culture, World
 const BASE_URL = 'https://news.naver.com';
@@ -17,7 +18,7 @@ async function getSectionArticles(sectionId) {
     try {
         const response = await fetch(`${BASE_URL}/section/${sectionId}`, { headers: HEADERS });
         const html = await response.text();
-        const $ = load(html);
+        const $ = cheerio.load(html);
         const articles = [];
 
         // Select articles from the headline list and main list
@@ -36,7 +37,7 @@ async function getSectionArticles(sectionId) {
             }
         });
 
-        // Limit to top 20 to allow higher-level control
+        // Limit to top 20 to avoid overwhelming
         return articles.slice(0, 20);
     } catch (error) {
         console.error(`Error fetching section ${sectionId}:`, error.message);
@@ -52,7 +53,7 @@ async function getArticleDetails(article) {
     try {
         const response = await fetch(article.url, { headers: HEADERS });
         const html = await response.text();
-        const $ = load(html);
+        const $ = cheerio.load(html);
 
         // Date extraction
         // Usually in .media_end_head_info_datestamp_time
@@ -104,45 +105,29 @@ function filterRecentArticles(articles) {
 }
 
 async function scrapeRecentArticles() {
-    console.log("Starting lightweight list scrape...");
-    
-    // Fetch lists for all sections concurrently
-    const sectionPromises = SECTIONS.map(sectionId => getSectionArticles(sectionId));
-    const sectionResults = await Promise.all(sectionPromises);
-
     let allArticles = [];
-    const seenUrls = new Set();
 
-    sectionResults.forEach((articles, index) => {
-        const sectionId = SECTIONS[index];
-        // Politics(100), Economy(101), Society(102) -> 10, Others -> 5
-        const limit = (sectionId === '100' || sectionId === '101' || sectionId === '102') ? 10 : 5;
-        const topArticles = articles.slice(0, limit);
+    for (const section of SECTIONS) {
+        const articles = await getSectionArticles(section);
+        console.log(`Found ${articles.length} articles in section ${section}. Fetching details...`);
         
-        topArticles.forEach(article => {
-            if (!seenUrls.has(article.url)) {
-                seenUrls.add(article.url);
-                // Return just the list data for now (FAST)
-                allArticles.push({
-                    ...article,
-                    sectionId
-                });
+        // Fetch details sequentially to be polite, or small batches
+        for (const article of articles) {
+            const details = await getArticleDetails(article);
+            if (details) {
+                allArticles.push(details);
             }
-        });
-    });
+            // Small delay
+            await new Promise(r => setTimeout(r, 100)); 
+        }
+    }
 
-    console.log(`Lightweight scrape complete. Total articles: ${allArticles.length}`);
-    return allArticles;
-}
+    console.log(`Total articles fetched: ${allArticles.length}`);
+    
+    const recentArticles = filterRecentArticles(allArticles);
+    console.log(`Articles within last 24h: ${recentArticles.length}`);
 
-/**
- * Optimized helper for detailed summary (used by /view)
- */
-async function getArticleSummary(url) {
-    console.log(`Deep crawling article: ${url}`);
-    // Reuse existing helper
-    const details = await getArticleDetails({ url });
-    return details;
+    return recentArticles;
 }
 
 /*
@@ -154,4 +139,4 @@ if (require.main === module) {
 }
 */
 
-export { scrapeRecentArticles, getSectionArticles, getArticleDetails, filterRecentArticles, getArticleSummary };
+module.exports = { scrapeRecentArticles, getSectionArticles, getArticleDetails, filterRecentArticles };
