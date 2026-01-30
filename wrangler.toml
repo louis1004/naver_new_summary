@@ -1,0 +1,7 @@
+name = "naver-news-summary"
+main = "server.js"
+compatibility_date = "2024-01-30"
+compatibility_flags = ["nodejs_compat"]
+
+[site]
+bucket = "./public"

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>네이버 뉴스 요약 (v3)</title>
+    <style>
+        /* CSS Variables for Theming - FORCED DARK MODE */
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --secondary-text: #aaaaaa;
+            --border-color: #333333;
+            --primary-color: #03C75A;
+            --highlight-bg: #3d3b2a;
+            --visited-color: #666666;
+            --hover-bg: #2a2a2a;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 1rem auto;
+            padding: 0 1rem;
+        }
+
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border-color);
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+        
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Grid Layout */
+        .sections-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 2rem;
+            display: none; /* Hidden until loaded */
+        }
+
+        .section-container { margin-bottom: 2rem; }
+        .section-title {
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 0.5rem;
+            margin: 0 0 0.5rem;
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+
+        .news-list { list-style: none; padding: 0; margin: 0; }
+        .news-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .news-item:hover { background-color: var(--hover-bg); }
+
+        .time {
+            width: 70px;
+            font-size: 0.85rem;
+            color: var(--secondary-text);
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .title {
+            flex-grow: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 500;
+        }
+        
+        .title a {
+            text-decoration: none;
+            color: var(--text-color);
+            display: block; /* Expand click area */
+        }
+
+        /* Visited Link Style */
+        .title a:visited {
+            color: var(--visited-color);
+        }
+
+        /* Keyword Highlight */
+        .highlight {
+            background-color: var(--highlight-bg);
+            border-radius: 2px;
+            padding: 0 2px;
+            font-weight: bold;
+        }
+
+        @media (max-width: 900px) {
+            .sections-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-screen">
+        <div class="spinner"></div>
+        <p>최신 뉴스를 수집하고 있습니다. 잠시만 기다려 주세요...</p>
+    </div>
+
+    <div class="container">
+        <div id="content" class="sections-grid"></div>
+    </div>
+
+    <script>
+        const SECTION_NAMES = {
+            '100': '정치', '101': '경제', '102': '사회', '103': '생활/문화', '104': '세계'
+        };
+
+        // Fetch news from API
+        async function loadNews() {
+            try {
+                const response = await fetch('/api/news');
+                if (!response.ok) throw new Error('Network response was not ok');
+                
+                const articles = await response.json();
+                renderNews(articles);
+                
+                // Hide loading, show content
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'grid';
+            } catch (error) {
+                document.getElementById('loading').innerHTML = `<p style="color:red">뉴스를 가져오는 데 실패했습니다.<br>${error.message}</p>`;
+            }
+        }
+
+        function sophisticatedHighlight(text) {
+             // Highlight [...] (...) '...' "..."
+             return text.replace(/([\[\(\{].+?[\}\)\]])|(['"].+?['"])/g, '<span class="highlight">$1$2</span>');
+        }
+
+        function renderNews(articles) {
+            const container = document.getElementById('content');
+            
+            // Group by section
+            const grouped = {};
+            articles.forEach(article => {
+                if (!grouped[article.sectionId]) grouped[article.sectionId] = [];
+                grouped[article.sectionId].push(article);
+            });
+
+            // Render
+            Object.keys(SECTION_NAMES).forEach(sectionId => {
+                if (!grouped[sectionId]) return;
+                
+                const sectionDiv = document.createElement('div');
+                sectionDiv.className = 'section-container';
+                
+                const title = document.createElement('h2');
+                title.className = 'section-title';
+                title.textContent = SECTION_NAMES[sectionId];
+                sectionDiv.appendChild(title);
+                
+                const ul = document.createElement('ul');
+                ul.className = 'news-list';
+                
+                grouped[sectionId].forEach(article => {
+                    const li = document.createElement('li');
+                    li.className = 'news-item';
+                    
+                    const timeSpan = document.createElement('div');
+                    timeSpan.className = 'time';
+                    timeSpan.textContent = formatTime(article.publishTime);
+                    
+                    const titleDiv = document.createElement('div');
+                    titleDiv.className = 'title';
+                    
+                    const link = document.createElement('a');
+                    link.href = `/view?url=${encodeURIComponent(article.url)}`;
+                    // Highlight logic
+                    link.innerHTML = sophisticatedHighlight(article.title);
+                    
+                    titleDiv.appendChild(link);
+                    li.appendChild(timeSpan);
+                    li.appendChild(titleDiv);
+                    ul.appendChild(li);
+                });
+                
+                sectionDiv.appendChild(ul);
+                container.appendChild(sectionDiv);
+            });
+        }
+
+        function formatTime(timeStr) {
+            if (!timeStr) return '';
+            const date = new Date(timeStr);
+            const now = new Date();
+            const diff = (now - date) / 1000 / 60; // minutes
+        
+            if (diff < 60) return `${Math.floor(diff)}분 전`;
+            if (diff < 60 * 24) return `${Math.floor(diff / 60)}시간 전`;
+            
+            return `${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+        }
+
+        // Start
+        loadNews();
+    </script>
+</body>
+</html>
