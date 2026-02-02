@@ -113,26 +113,51 @@ async function scrapeRecentArticles() {
     let allArticles = [];
     const seenUrls = new Set();
 
+    // Fetch article details to get publish time for filtering
+    const detailPromises = [];
+    
     sectionResults.forEach((articles, index) => {
         const sectionId = SECTIONS[index];
-        // Politics(100), Economy(101), Society(102) -> 10, Others -> 5
-        const limit = (sectionId === '100' || sectionId === '101' || sectionId === '102') ? 10 : 5;
+        const limit = 10; // 모든 섹션 10개씩
         const topArticles = articles.slice(0, limit);
         
         topArticles.forEach(article => {
             if (!seenUrls.has(article.url)) {
                 seenUrls.add(article.url);
-                // Return just the list data for now (FAST)
-                allArticles.push({
-                    ...article,
-                    sectionId
-                });
+                detailPromises.push(getArticleDetails({ ...article, sectionId }));
             }
         });
     });
 
-    console.log(`Lightweight scrape complete. Total articles: ${allArticles.length}`);
-    return allArticles;
+    // Get details with publish time
+    const detailedArticles = await Promise.all(detailPromises);
+    
+    // Filter to last 24 hours
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
+    
+    allArticles = detailedArticles.filter(article => {
+        if (!article || !article.publishTime) return false;
+        const pubDate = new Date(article.publishTime);
+        return pubDate >= twentyFourHoursAgo && pubDate <= now;
+    });
+
+    // Group by section and limit to 10 per section
+    const bySection = {};
+    allArticles.forEach(article => {
+        if (!bySection[article.sectionId]) {
+            bySection[article.sectionId] = [];
+        }
+        if (bySection[article.sectionId].length < 10) {
+            bySection[article.sectionId].push(article);
+        }
+    });
+
+    // Flatten back
+    const result = Object.values(bySection).flat();
+
+    console.log(`Scrape complete. Total articles (24h): ${result.length}`);
+    return result;
 }
 
 /**
@@ -140,9 +165,47 @@ async function scrapeRecentArticles() {
  */
 async function getArticleSummary(url) {
     console.log(`Deep crawling article: ${url}`);
-    // Reuse existing helper
-    const details = await getArticleDetails({ url });
-    return details;
+    try {
+        const response = await fetch(url, { headers: HEADERS });
+        const html = await response.text();
+        const $ = load(html);
+
+        // Title extraction
+        const title = $('meta[property="og:title"]').attr('content') || 
+                      $('.media_end_head_headline').text().trim() ||
+                      $('h2.media_end_head_headline').text().trim();
+
+        // Press extraction
+        const press = $('.media_end_head_top_logo img').attr('alt') ||
+                      $('meta[name="twitter:creator"]').attr('content') || '';
+
+        // Date extraction
+        let publishTime = $('.media_end_head_info_datestamp_time').attr('data-date-time');
+        if (!publishTime) {
+            publishTime = $('.media_end_head_info_datestamp_time').first().text().trim();
+        }
+
+        // Content extraction
+        const $content = $('#dic_area');
+        $content.find('.img_desc, figcaption, .end_photo_org, .byline').remove();
+        $content.find('br').replaceWith('\n');
+        const content = $content.text().trim();
+
+        // Image extraction
+        const image = $('meta[property="og:image"]').attr('content');
+
+        return {
+            url,
+            title,
+            press,
+            publishTime,
+            content,
+            image
+        };
+    } catch (error) {
+        console.error(`Error fetching article: ${error.message}`);
+        return null;
+    }
 }
 
 export { scrapeRecentArticles, getSectionArticles, getArticleDetails, filterRecentArticles, getArticleSummary };

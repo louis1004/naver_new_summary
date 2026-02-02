@@ -13,19 +13,10 @@ app.onError((err, c) => {
     return c.text(`Internal Server Error: ${err.message}\n${err.stack}`, 500);
 });
 
-// Cache to prevent pounding the server if multiple refreshes happen instantly
-let cache = {
-    data: [], // Initialize to empty array instead of null
-    lastUpdated: 0,
-    isUpdating: false,
-    updatePromise: null // Store promise for synchronization
-};
+// Summary cache - only for AI summaries to save tokens
+const summaryCache = new Map(); // url -> { title, press, publishTime, url, summary, timestamp }
+const SUMMARY_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
-// Cache policy: List Cache (1 min), Summary Cache (1 hour)
-const LIST_CACHE_DURATION = 60 * 1000; 
-let summaryCache = new Map(); // url -> { article, summarySentences, timestamp }
-
-// URL normalization for matching (ignores query params)
 function normalizeUrl(url) {
     if (!url) return '';
     try {
@@ -36,18 +27,15 @@ function normalizeUrl(url) {
     }
 }
 
-// API Route for News Data
+// API Route for News Data - Always fetch fresh
 app.get('/api/news', async (c) => {
     try {
-        // Always trigger update per user request for absolute real-time data
-        await updateCache();
-        return c.json(cache.data || []);
+        console.log('Fetching fresh news data...');
+        const articles = await scraper.scrapeRecentArticles();
+        return c.json(articles || []);
     } catch (error) {
         console.error(error);
-        return c.json({ 
-            error: 'Failed to scrape news', 
-            message: error.message
-        }, 500);
+        return c.json({ error: 'Failed to scrape news', message: error.message }, 500);
     }
 });
 
@@ -55,70 +43,77 @@ app.get('/', async (c) => {
     return serveStatic({ path: './app_shell.html', manifest })(c);
 });
 
+// View page - returns shell with article info, loads summary via API
 app.get('/view', async (c) => {
     const articleUrl = c.req.query('url');
+    const title = c.req.query('title') || '';
+    const press = c.req.query('press') || '';
+    const time = c.req.query('time') || '';
+    
     if (!articleUrl) return c.text('Missing URL', 400);
+    
+    // Return page with known info, summary loads async
+    return c.html(detailTemplate.generateLoadingHTML(articleUrl, title, press, time));
+});
 
-    const now = Date.now();
+// API for summary - called by the view page (with caching)
+app.get('/api/summary', async (c) => {
+    const articleUrl = c.req.query('url');
+    if (!articleUrl) return c.json({ error: 'Missing URL' }, 400);
+
     const normalizedUrl = normalizeUrl(articleUrl);
+    const now = Date.now();
 
-    // 1. Check Summary Cache first (1 hour)
+    // Check cache first
     if (summaryCache.has(normalizedUrl)) {
         const cached = summaryCache.get(normalizedUrl);
-        if (now - cached.timestamp < 3600 * 1000) {
-            console.log('Serving cached summary');
-            return c.html(detailTemplate.generateDetailHTML(cached.article, cached.summarySentences));
+        if (now - cached.timestamp < SUMMARY_CACHE_DURATION) {
+            console.log(`Cache hit for: ${articleUrl}`);
+            return c.json({
+                title: cached.title,
+                press: cached.press,
+                publishTime: cached.publishTime,
+                url: cached.url,
+                summary: cached.summary,
+                cached: true
+            });
         }
     }
 
     try {
-        // 2. Perform Lazy Summary (Deep Crawl on demand)
+        console.log(`Generating summary for: ${articleUrl}`);
         const articleDetails = await scraper.getArticleSummary(articleUrl);
+        
         if (!articleDetails || !articleDetails.content) {
-            return c.text('Failed to fetch article content or article is unavailable.', 404);
+            return c.json({ error: 'Failed to fetch article' }, 404);
         }
 
-        const summarySentences = summarizer.summarize(articleDetails.title, articleDetails.content);
+        const summarySentences = await summarizer.summarize(articleDetails.title, articleDetails.content);
         
-        // 3. Cache the result
-        summaryCache.set(normalizedUrl, {
-            article: articleDetails,
-            summarySentences,
+        // Cache the result
+        const result = {
+            title: articleDetails.title,
+            press: articleDetails.press,
+            publishTime: articleDetails.publishTime,
+            url: articleDetails.url,
+            summary: summarySentences,
             timestamp: now
+        };
+        summaryCache.set(normalizedUrl, result);
+        
+        return c.json({
+            title: result.title,
+            press: result.press,
+            publishTime: result.publishTime,
+            url: result.url,
+            summary: result.summary,
+            cached: false
         });
-
-        return c.html(detailTemplate.generateDetailHTML(articleDetails, summarySentences));
     } catch (e) {
-        console.error("View failed", e);
-        return c.text(`Error generating summary: ${e.message}`, 500);
+        console.error("Summary failed", e);
+        return c.json({ error: e.message }, 500);
     }
 });
-
-async function updateCache() {
-    if (cache.isUpdating) {
-        // If already updating, wait for that promise to resolve
-        return cache.updatePromise;
-    }
-    
-    cache.isUpdating = true;
-    cache.updatePromise = (async () => {
-        console.log('Scraping new data...');
-        try {
-            const articles = await scraper.scrapeRecentArticles();
-            cache.data = articles || [];
-            cache.lastUpdated = Date.now();
-        } catch (e) {
-            console.error("Scrape failed", e);
-            // Don't throw here so we don't break consecutive requests, 
-            // but log it
-        } finally {
-            cache.isUpdating = false;
-            cache.updatePromise = null;
-        }
-    })();
-
-    return cache.updatePromise;
-}
 
 // Serve static files using manifest
 app.use('/*', serveStatic({ manifest }));

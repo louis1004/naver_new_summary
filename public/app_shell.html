@@ -198,7 +198,7 @@
                     titleDiv.className = 'title';
                     
                     const link = document.createElement('a');
-                    link.href = `/view?url=${encodeURIComponent(article.url)}`;
+                    link.href = `/view?url=${encodeURIComponent(article.url)}&title=${encodeURIComponent(article.title)}&press=${encodeURIComponent(article.press || '')}&time=${encodeURIComponent(formatTime(article.publishTime))}`;
                     // Highlight logic
                     link.innerHTML = sophisticatedHighlight(article.title);
                     
