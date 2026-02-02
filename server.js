@@ -88,7 +88,7 @@ app.get('/api/summary', async (c) => {
             return c.json({ error: 'Failed to fetch article' }, 404);
         }
 
-        const summarySentences = await summarizer.summarize(articleDetails.title, articleDetails.content);
+        const summarySentences = await summarizer.summarize(articleDetails.title, articleDetails.content, c.env.GEMINI_API_KEY);
         
         // Cache the result
         const result = {

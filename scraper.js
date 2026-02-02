@@ -16,6 +16,12 @@ async function getSectionArticles(sectionId) {
     console.log(`Fetching section ${sectionId}...`);
     try {
         const response = await fetch(`${BASE_URL}/section/${sectionId}`, { headers: HEADERS });
+        
+        if (!response.ok) {
+            console.error(`Section ${sectionId} fetch failed: ${response.status} ${response.statusText}`);
+            return [];
+        }
+        
         const html = await response.text();
         const $ = load(html);
         const articles = [];
@@ -51,6 +57,12 @@ async function getSectionArticles(sectionId) {
 async function getArticleDetails(article) {
     try {
         const response = await fetch(article.url, { headers: HEADERS });
+        
+        if (!response.ok) {
+            console.error(`Article fetch failed: ${response.status} - ${article.url}`);
+            return null;
+        }
+        
         const html = await response.text();
         const $ = load(html);
 
@@ -104,7 +116,7 @@ function filterRecentArticles(articles) {
 }
 
 async function scrapeRecentArticles() {
-    console.log("Starting lightweight list scrape...");
+    console.log("Starting list scrape...");
     
     // Fetch lists for all sections concurrently
     const sectionPromises = SECTIONS.map(sectionId => getSectionArticles(sectionId));
@@ -112,52 +124,26 @@ async function scrapeRecentArticles() {
 
     let allArticles = [];
     const seenUrls = new Set();
-
-    // Fetch article details to get publish time for filtering
-    const detailPromises = [];
     
     sectionResults.forEach((articles, index) => {
         const sectionId = SECTIONS[index];
-        const limit = 10; // 모든 섹션 10개씩
+        const limit = 10;
         const topArticles = articles.slice(0, limit);
         
         topArticles.forEach(article => {
             if (!seenUrls.has(article.url)) {
                 seenUrls.add(article.url);
-                detailPromises.push(getArticleDetails({ ...article, sectionId }));
+                allArticles.push({
+                    ...article,
+                    sectionId,
+                    publishTime: new Date().toISOString() // Use current time as placeholder
+                });
             }
         });
     });
 
-    // Get details with publish time
-    const detailedArticles = await Promise.all(detailPromises);
-    
-    // Filter to last 24 hours
-    const now = new Date();
-    const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
-    
-    allArticles = detailedArticles.filter(article => {
-        if (!article || !article.publishTime) return false;
-        const pubDate = new Date(article.publishTime);
-        return pubDate >= twentyFourHoursAgo && pubDate <= now;
-    });
-
-    // Group by section and limit to 10 per section
-    const bySection = {};
-    allArticles.forEach(article => {
-        if (!bySection[article.sectionId]) {
-            bySection[article.sectionId] = [];
-        }
-        if (bySection[article.sectionId].length < 10) {
-            bySection[article.sectionId].push(article);
-        }
-    });
-
-    // Flatten back
-    const result = Object.values(bySection).flat();
-
-    console.log(`Scrape complete. Total articles (24h): ${result.length}`);
-    return result;
+    console.log(`Scrape complete. Total articles: ${allArticles.length}`);
+    return allArticles;
 }
 
 /**
@@ -167,6 +153,12 @@ async function getArticleSummary(url) {
     console.log(`Deep crawling article: ${url}`);
     try {
         const response = await fetch(url, { headers: HEADERS });
+        
+        if (!response.ok) {
+            console.error(`Summary fetch failed: ${response.status} - ${url}`);
+            return null;
+        }
+        
         const html = await response.text();
         const $ = load(html);
 
